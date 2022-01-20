@@ -1,0 +1,165 @@
+-- Used MS SQL Server
+-- Database: Nashville Housing Price 
+
+
+
+
+
+SELECT * FROM dbo.nashville
+
+
+
+
+-- standardize date format
+
+SELECT SaleDate, CONVERT(datetime, SaleDate) FROM dbo.nashville
+
+UPDATE dbo.nashville
+SET SaleDate = CONVERT(datetime, SaleDate) 
+
+-- Alternative Method
+
+ALTER TABLE nashville 
+ADD SaleDateconverted DATETIME
+
+UPDATE dbo.nashville
+SET SaleDateconverted = CONVERT(datetime, SaleDate) 
+
+
+
+
+-- There are NULL values in Property Address and we want to replace the value with the adress ParcelID is appointed with.
+
+SELECT a.ParcelID, a.PropertyAddress, b.ParcelID, b.PropertyAddress, ISNULL(a.PropertyAddress, b.PropertyAddress)
+FROM nashville a 
+JOIN nashville b      -- using self join 
+    ON a.ParcelID = b.ParcelID 
+    AND a.uniqueID <> b.uniqueID
+WHERE a.PropertyAddress is NULL 
+
+UPDATE a     -- with update function use alias
+SET PropertyAddress = ISNULL(a.PropertyAddress, b.PropertyAddress)
+FROM nashville a 
+JOIN nashville b 
+    ON a.ParcelID = b.ParcelID 
+    AND a.uniqueID <> b.uniqueID
+WHERE a.PropertyAddress is NULL 
+
+SELECT * FROM nashville
+
+
+
+
+
+-- breaking out address into indivdual columns (address, city, state)
+
+SELECT SUBSTRING(PropertyAddress, 1, CHARINDEX(',',PropertyAddress)-1) AS Address,
+        SUBSTRING(PropertyAddress, CHARINDEX(',',PropertyAddress) +1, LEN(PropertyAddress) /* or 100 */) AS City
+FROM nashville
+
+
+ALTER TABLE nashville 
+ADD PropertySplitAddress nvarchar (200)
+
+UPDATE nashville
+SET PropertySplitAddress = SUBSTRING(PropertyAddress, 1, CHARINDEX(',',PropertyAddress)-1)
+
+ALTER TABLE nashville 
+ADD PropertySplitCity nvarchar (200)
+
+UPDATE nashville
+SET PropertySplitCity = SUBSTRING(PropertyAddress, CHARINDEX(',',PropertyAddress) +1, LEN(PropertyAddress))
+
+
+-- Same with Owner Address
+
+SELECT 
+        PARSENAME(REPLACE(OwnerAddress,',','.'),1) as State,
+        PARSENAME(REPLACE(OwnerAddress,',','.'),2) as City,
+        PARSENAME(REPLACE(OwnerAddress,',','.'),3) as Address
+FROM nashville
+
+ALTER TABLE nashville 
+ADD OwnerSplitAddress nvarchar (200)
+
+UPDATE nashville
+SET OwnerSplitAddress = PARSENAME(REPLACE(OwnerAddress,',','.'),3)
+
+ALTER TABLE nashville 
+ADD OwnerSplitCity nvarchar (200)
+
+UPDATE nashville
+SET OwnerSplitCity = PARSENAME(REPLACE(OwnerAddress,',','.'),2)
+
+ALTER TABLE nashville 
+ADD OwnerSplitState nvarchar (200)
+
+UPDATE nashville
+SET OwnerSplitState = PARSENAME(REPLACE(OwnerAddress,',','.'),1)
+
+
+
+
+-- Change Y and N in SoldAsVacant to Yes and No
+
+SELECT SoldAsVacant,
+    CASE
+        WHEN SoldAsVacant = 'Y' THEN 'Yes'
+        WHEN SoldAsVacant = 'N' THEN 'No'
+        ELSE SoldAsVacant
+    END
+FROM nashville 
+
+UPDATE nashville
+SET SoldAsVacant = CASE
+             WHEN SoldAsVacant = 'Y' THEN 'Yes'
+             WHEN SoldAsVacant = 'N' THEN 'No'
+               ELSE SoldAsVacant
+               END
+
+
+
+
+-- Remove Duplicates. CANNOT USE WHERE FUNCTION because it is a window. Must use CTE 
+
+WITH ROWNumCTE AS(
+SELECT *, ROW_NUMBER() OVER (
+        PARTITION BY ParcelID, 
+                    PropertyAddress,
+                    SalePrice,
+                    SaleDate,
+                    LegalReference
+                    ORDER BY 
+                        UniqueID) 
+                    AS row_num
+
+FROM nashville
+-- ORDER BY ParcelID      
+)
+
+DELETE FROM RownumCTE 
+WHERE row_num > 1   -- Deleting Duplicates
+
+
+
+
+-- Deleting Colunms
+
+ALTER TABLE nashville
+DROP COLUMN OwnerAddress, TaxDistrict, PropertyAddress
+
+ALTER TABLE nashville
+DROP COLUMN SaleDateConverted
+
+SELECT * FROM nashville
+
+
+
+
+-- Changing Column Name
+EXEC sp_rename 'dbo.nashville.PropertySplitAddress', 'PropertyAddress', 'COLUMN';
+EXEC sp_rename 'dbo.nashville.PropertySplitCity', 'PropertyCity', 'COLUMN';
+EXEC sp_rename 'dbo.nashville.OwnerSplitAddress', 'OwnerAddress', 'COLUMN';
+EXEC sp_rename 'dbo.nashville.OwnerSplitCity', 'OwnerCity', 'COLUMN';
+EXEC sp_rename 'dbo.nashville.OwnerSplitState', 'OwnerState', 'COLUMN';
+
