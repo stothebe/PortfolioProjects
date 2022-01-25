@@ -1,7 +1,10 @@
 
 
 # Content
-There are 7786 movies in the dataset (220 movies per year, 1986-2020). Each movie has the following attributes:
+
+There are 7786 movies in the dataset (220 movies per year, 1986-2020). This data was scraped from IMDb.
+
+# Attributes
 
 budget: the budget of a movie. Some movies don't have this, so it appears as 0
 
@@ -33,6 +36,5 @@ writer: writer of the movie
 
 year: year of release
 
-# Acknowledgements
-This data was scraped from IMDb.
+
 
