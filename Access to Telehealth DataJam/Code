@@ -1,0 +1,186 @@
+-- Caculating Mental Healthcare Needs Using Mental Distress Percentage and Health Professional Shortage Score (HPSA) by County 
+
+with cte as (SELECT common_state_name, county_equivalent_name, AVG(hpsa_score) as avg_hpsascore FROM hpsa
+GROUP BY common_state_name, county_equivalent_name
+),
+hpsascore as (SELECT common_state_name, county_equivalent_name, avg_hpsascore, CASE WHEN avg_hpsascore BETWEEN 0 AND 6 THEN 1
+                                                                    WHEN avg_hpsascore BETWEEN 6 AND 12 THEN 2
+                                                                    WHEN avg_hpsascore BETWEEN 12 AND 18 THEN 3
+                                                                    ELSE 4
+                                                                    END AS hpsa_score
+            FROM cte),
+
+
+mhscore as (select state, county, mental_distress_percentage, 
+        CASE WHEN mental_distress_percentage BETWEEN 0 AND 10 THEN 1
+            WHEN mental_distress_percentage BETWEEN 10 AND 15 THEN 2 
+            WHEN mental_distress_percentage BETWEEN 15 AND 20 THEN 3
+            ELSE 4
+            END AS mental_distress_score      
+from mh_county),
+
+
+scores as (SELECT DISTINCT m.state, m.county, avg_hpsascore, hpsa_score, mental_distress_percentage, 
+            mental_distress_score, mental_health_provider_score
+         mental_health_provider_score
+FROM hpsascore as h 
+RIGHT JOIN mhscore as m
+ON m.county = h.county_equivalent_name AND h.common_state_name = m.state
+JOIN mh_provider as p 
+ON p.county = m.county AND p.state = m.state)
+
+ON p.county = m.county AND p.state = m.state),
+
+
+SELECT state, county, avg_hpsascore, mental_distress_percentage, CASE WHEN hpsa_score IS NULL THEN mental_health_provider_score
+ mh_care as (SELECT state, county, avg_hpsascore, mental_distress_percentage, CASE WHEN hpsa_score IS NULL THEN mental_health_provider_score
+                        ELSE hpsa_score
+                        END as hpsa_scores, mental_distress_score,
+         (CASE WHEN hpsa_score IS NULL THEN mental_health_provider_score
+                        ELSE hpsa_score
+                        END + mental_distress_score) as highneed_composite_score
+FROM scores
+                        END as hpsa_scores
+FROM scores)
+
+
+
+-- Calculating Technology Access Score by County Using Metrics on Broadband, Smartphone, PC Usage 
+
+DELETE FROM techaccess
+WHERE state = 'Puerto Rico' OR state = 'US Virgin Islands' OR state = 'Guam'
+
+-- UPDATE techaccess SET county = REPLACE(REPLACE(county, 'parish','county'),'county','')
+-- Update techaccess SET county = REPLACE(county, ' Borough','')
+-- Update techaccess SET county = REPLACE(county, ' Census Area','')
+-- Update techaccess SET county = REPLACE(county, 'And','')
+-- update techaccess SET county = rtrim(county)
+
+-- scoring each column 
+
+SELECT *, CASE WHEN no_pc BETWEEN 0 AND 15 THEN 1 
+                WHEN no_pc BETWEEN 15 AND 30 THEN 2
+                WHEN no_pc BETWEEN 30 AND 45 THEN 3
+                ELSE 4
+            END AS no_pc_score,
+        CASE WHEN no_smartphone BETWEEN 0 AND 5 THEN 1
+            WHEN no_smartphone BETWEEN 5 AND 10 THEN 2
+            WHEN no_smartphone BETWEEN 10 AND 15 THEN 3
+            ELSE 4
+            END AS no_smartphone_score, 
+        CASE WHEN broadband_access BETWEEN 25 AND 43 THEN 4
+            WHEN broadband_access BETWEEN 43 AND 65 THEN 3
+            WHEN broadband_access BETWEEN 65 AND 83 THEN 2
+            ELSE 1
+            END AS no_broadband_score,
+        (CASE WHEN no_pc BETWEEN 0 AND 15 THEN 1 
+                WHEN no_pc BETWEEN 15 AND 30 THEN 2
+                WHEN no_pc BETWEEN 30 AND 45 THEN 3
+                ELSE 4
+                END
+            +
+        CASE WHEN no_smartphone BETWEEN 0 AND 5 THEN 1
+            WHEN no_smartphone BETWEEN 5 AND 10 THEN 2
+            WHEN no_smartphone BETWEEN 10 AND 15 THEN 3
+            ELSE 4
+            END
+            +
+        CASE WHEN broadband_access BETWEEN 25 AND 43 THEN 4
+            WHEN broadband_access BETWEEN 43 AND 65 THEN 3
+            WHEN broadband_access BETWEEN 65 AND 83 THEN 2
+            ELSE 1
+            END
+        ) as techaccess_composite_score
+FROM techaccess
+ORDER BY state 
+
+
+-- Calculating Demographics Score Using Non-English Speakaing and Senior Population Percentage by County 
+
+SELECT state, county, senior_percentage, Percentage_not_proficient_in_english,
+        CASE WHEN senior_percentage BETWEEN 4.8 AND 19 THEN 1
+            WHEN senior_percentage BETWEEN 19 AND 33 THEN 2
+            WHEN senior_percentage BETWEEN 33 AND 47 THEN 3
+            ELSE 4
+            END AS senior_score,
+        CASE WHEN Percentage_not_proficient_in_english BETWEEN 0 AND 9 THEN 1 
+            WHEN Percentage_not_proficient_in_english BETWEEN 9 AND 18 THEN 2
+            WHEN Percentage_not_proficient_in_english BETWEEN 18 AND 27 THEN 3
+            ELSE 4 
+            END AS non_english_speaking_score,
+        (CASE WHEN senior_percentage BETWEEN 4.8 AND 19 THEN 1
+            WHEN senior_percentage BETWEEN 19 AND 33 THEN 2
+            WHEN senior_percentage BETWEEN 33 AND 47 THEN 3
+            ELSE 4
+            END 
+            +
+        CASE WHEN Percentage_not_proficient_in_english BETWEEN 0 AND 9 THEN 1 
+            WHEN Percentage_not_proficient_in_english BETWEEN 9 AND 18 THEN 2
+            WHEN Percentage_not_proficient_in_english BETWEEN 18 AND 27 THEN 3
+            ELSE 4 
+            END) as dem_composite_score
+FROM demographics
+WHERE county is not null
+ORDER BY state
+
+
+-- grouping inpatient services per county per year 
+
+with cte AS(SELECT *, CASE WHEN BehavioralHealthService = 'Emergency department' THEN 'Inpatient Treatment'
+                WHEN BehavioralHealthService = 'Inpatient' THEN 'Inpatient Treatment'
+                WHEN BehavioralHealthService LIKE 'Intensive%' THEN 'Inpatient Treatment'
+                WHEN BehavioralHealthService = 'Outpatient' THEN 'Outpatient'
+                ELSE BehavioralHealthService
+                END AS 'Service',
+format(CAST(CAST(Month as varchar(6)) + '01' as date),'yyyy-MM') AS Month1 FROM mh_caretype
+WHERE condition = 'Mental health disorder' ),
+
+-- Getting only inpatient treated beneficiaries in 2020
+
+ services as (SELECT State, year, condition, Service, SUM(ServiceCount) as stateservicecount, 
+        ROUND(SUM(RatePer1000Beneficiaries),1) as totalrateper1000, ROUND(SUM(Benficiary_percentage),2) as totalpercentage
+FROM cte
+WHERE year = 2020 AND service = 'Inpatient Treatment'
+GROUP BY State, year, condition, Service
+),
+
+-- Joining all Tables and Creating View 
+
+
+Create view realtable 
+AS
+SELECT  l.*, area_2010, c.Mental_Distress_Percentage, t.year, t.no_pc, t.no_smartphone, t.broadband_access, ROUND(pop/statepop,4) as countytostatepopratio
+FROM (select *, CAST(population as FLOAT) as pop, 
+    CAST(FIRST_VALUE(population) OVER(PARTITION BY state ORDER BY county) as float) as statepop FROM demographics) as l
+JOIN mh_county c 
+ON l.state = c.state AND l.county = c.county
+LEFT JOIN techaccess t 
+ON t.state = c.state AND t.county = c.county
+LEFT JOIN county_area a 
+ON c.state = a.state AND c.county = a.county
+
+
+
+-- Calculating Components of Return of Investment for Implementation of Telepsychiatry 
+
+totaltable as (SELECT State, county, pop,ROUND(stateservicecount * countytostatepopratio,0) as county_servicecount, 
+    mentalhealth_pop,
+    ROUND(CAST(mental_distress_percentage as float)/100 * pop,0) * 1081 as telehealth_reimbursement,
+    ROUND(stateservicecount * countytostatepopratio * 6600,0) as total_inpatientcost,
+    area_2010, broadband_access,ROUND(area_2010 * (1-broadband_access/100) * 27000,0) as broadband_cost,
+    no_smartphone, ROUND(mentalhealth_pop * no_smartphone/100,0)*317 as smartphone_cost,
+    no_pc, ROUND(mentalhealth_pop*no_pc/100 * 500,0) as pc_cost,
+    ROUND(mentalhealth_pop * percentage_not_proficient_in_english/100,0) * 234 as english_translator_cost,
+    ROUND(mentalhealth_pop * senior_percentage/100 * 100 , 0) as digital_training_cost
+FROM (SELECT c.*, s.stateservicecount, ROUND(CAST(mental_distress_percentage as float)/100 * pop,0) as mentalhealth_pop
+FROM services s
+JOIN dbo.realtable c
+ON s.state = c.state) as comp)
+
+
+-- Calculating ROI for Implementation of Telepsychiatry by County Per Year 
+
+SELECT state, county, telehealth_reimbursement, total_inpatientcost, broadband_cost, pc_cost, english_translator_cost,
+ digital_training_cost, ROUND(telehealth_reimbursement + total_inpatientcost 
+- broadband_cost - pc_cost - english_translator_cost - digital_training_cost,2) as roi 
+FROM totaltable
